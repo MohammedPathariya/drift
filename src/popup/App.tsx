@@ -4,9 +4,6 @@ import { checkingRemainingPercent, formatMinutes } from '../shared/utils';
 import {
   BADGE_GREEN_THRESHOLD,
   BADGE_YELLOW_THRESHOLD,
-  BADGE_COLOR_GREEN,
-  BADGE_COLOR_YELLOW,
-  BADGE_COLOR_RED,
 } from '../shared/constants';
 
 interface PopupState {
@@ -19,8 +16,20 @@ interface PopupState {
   pendingMinutes: number;
   activeDomain: string | null;
   activeClassification: string | null;
-  // Live elapsed in current segment (if classified)
   liveExtraMinutes: number;
+}
+
+// Aura colors keyed to checking balance
+function getAuraColor(percent: number): string {
+  if (percent > BADGE_GREEN_THRESHOLD) return 'rgba(34, 197, 94, 0.18)';
+  if (percent > BADGE_YELLOW_THRESHOLD) return 'rgba(234, 179, 8, 0.18)';
+  return 'rgba(239, 68, 68, 0.18)';
+}
+
+function getBalanceColor(percent: number): string {
+  if (percent > BADGE_GREEN_THRESHOLD) return '#22c55e';
+  if (percent > BADGE_YELLOW_THRESHOLD) return '#f59e0b';
+  return '#ef4444';
 }
 
 export default function App() {
@@ -39,7 +48,6 @@ export default function App() {
 
   useEffect(() => {
     loadState();
-    // Refresh live counter every 5 seconds
     const interval = setInterval(loadState, 5000);
     return () => clearInterval(interval);
   }, []);
@@ -73,22 +81,28 @@ export default function App() {
   }
 
   if (!state.loaded) {
-    return <div style={styles.loading}>Loading...</div>;
+    return (
+      <div style={{ ...s.root, alignItems: 'center', justifyContent: 'center', minHeight: 180 }}>
+        <div style={s.loadingDot} />
+      </div>
+    );
   }
 
   if (!state.onboardingComplete) {
     return (
-      <div style={styles.container}>
-        <div style={styles.header}>Drift</div>
-        <p style={{ color: '#9999bb', fontSize: 13, padding: '16px 20px' }}>
-          Complete setup to start tracking.
-        </p>
-        <button
-          style={styles.actionBtn}
-          onClick={() => chrome.tabs.create({ url: chrome.runtime.getURL('src/onboarding/index.html') })}
-        >
-          Open Setup
-        </button>
+      <div style={s.root}>
+        <div style={{ padding: '28px 20px', textAlign: 'center' as const }}>
+          <div style={s.wordmark}>Drift</div>
+          <p style={{ color: '#6b6b8a', fontSize: 13, marginTop: 12, lineHeight: 1.6 }}>
+            Set up your daily budget to begin.
+          </p>
+          <button
+            style={{ ...s.pill, marginTop: 20, width: '100%' }}
+            onClick={() => chrome.tabs.create({ url: chrome.runtime.getURL('src/onboarding/index.html') })}
+          >
+            Open Setup →
+          </button>
+        </div>
       </div>
     );
   }
@@ -96,77 +110,95 @@ export default function App() {
   const totalSpent = state.checkingSpentMinutes + state.liveExtraMinutes;
   const remainPercent = checkingRemainingPercent(totalSpent, state.dailyTargetMinutes);
   const remainingMinutes = Math.max(0, state.dailyTargetMinutes - totalSpent);
-  const percentColor = getPercentColor(remainPercent);
+  const auraColor = getAuraColor(remainPercent);
+  const balanceColor = getBalanceColor(remainPercent);
 
-  const investPercent = state.dailyTargetMinutes > 0
-    ? Math.min(100, (state.investmentMinutes / state.dailyTargetMinutes) * 100)
-    : 0;
-  const voidPercent = state.dailyTargetMinutes > 0
-    ? Math.min(100, (state.voidMinutes / state.dailyTargetMinutes) * 100)
-    : 0;
+  const investPct = Math.min(100, (state.investmentMinutes / state.dailyTargetMinutes) * 100);
+  const voidPct = Math.min(100, (state.voidMinutes / state.dailyTargetMinutes) * 100);
+
+  const isActiveClassified =
+    state.activeClassification &&
+    state.activeClassification !== 'pending';
 
   return (
-    <div style={styles.container}>
+    <div style={s.root}>
+      {/* Reactive aura */}
+      <div
+        style={{
+          ...s.aura,
+          background: `radial-gradient(ellipse 280px 160px at 50% -20px, ${auraColor}, transparent)`,
+        }}
+      />
+
       {/* Header */}
-      <div style={styles.header}>
-        <span>Drift</span>
+      <div style={s.header}>
+        <span style={s.wordmark}>Drift</span>
         <button
-          style={styles.dashboardBtn}
+          style={s.iconBtn}
           onClick={() => chrome.tabs.create({ url: chrome.runtime.getURL('src/dashboard/index.html') })}
           title="Open dashboard"
         >
-          ↗
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+            <path d="M2 12L12 2M12 2H6M12 2V8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
         </button>
       </div>
 
-      {/* Checking account balance */}
-      <div style={styles.balanceSection}>
-        <div style={{ ...styles.balancePercent, color: percentColor }}>
-          {Math.round(remainPercent)}%
+      {/* Main balance */}
+      <div style={s.balanceSection}>
+        <div style={{ ...s.balanceNumber, color: balanceColor }}>
+          {Math.round(remainPercent)}
+          <span style={s.balancePct}>%</span>
         </div>
-        <div style={styles.balanceLabel}>Checking remaining</div>
-        <div style={styles.balanceSub}>{formatMinutes(remainingMinutes)} left of {formatMinutes(state.dailyTargetMinutes)}</div>
+        <div style={s.balanceLabel}>checking remaining</div>
+        <div style={s.balanceSub}>{formatMinutes(remainingMinutes)} of {formatMinutes(state.dailyTargetMinutes)} left</div>
       </div>
 
-      {/* Progress bar */}
-      <div style={styles.progressTrack}>
-        <div
-          style={{
-            ...styles.progressInvest,
-            width: `${investPercent}%`,
-          }}
-          title={`Investment: ${formatMinutes(state.investmentMinutes)}`}
-        />
-        <div
-          style={{
-            ...styles.progressVoid,
-            width: `${voidPercent}%`,
-            left: `${investPercent}%`,
-          }}
-          title={`Void: ${formatMinutes(state.voidMinutes)}`}
-        />
+      {/* Progress track */}
+      <div style={s.track}>
+        <div style={{ ...s.trackFill, width: `${investPct}%`, background: '#22c55e' }} />
+        <div style={{ ...s.trackFill, width: `${voidPct}%`, left: `${investPct}%`, background: '#ef4444' }} />
       </div>
 
-      {/* Breakdown */}
-      <div style={styles.breakdown}>
-        <Stat label="Investment" value={formatMinutes(state.investmentMinutes)} color="#22c55e" />
-        <Stat label="Void" value={formatMinutes(state.voidMinutes)} color="#ef4444" />
-        {state.pendingMinutes > 0 && (
-          <Stat label="Pending" value={formatMinutes(state.pendingMinutes)} color="#f59e0b" />
+      {/* Glass cards row */}
+      <div style={s.cardsRow}>
+        <GlassCard
+          label="Investment"
+          value={formatMinutes(state.investmentMinutes)}
+          color="#22c55e"
+          pct={investPct}
+        />
+        <GlassCard
+          label="Void"
+          value={formatMinutes(state.voidMinutes)}
+          color="#ef4444"
+          pct={voidPct}
+        />
+        {state.pendingMinutes > 0.1 && (
+          <GlassCard
+            label="Pending"
+            value={formatMinutes(state.pendingMinutes)}
+            color="#f59e0b"
+            pct={0}
+            compact
+          />
         )}
       </div>
 
       {/* Active segment */}
       {state.activeDomain && (
-        <div style={styles.activeSegment}>
-          <span style={styles.activeDot} />
-          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {state.activeDomain}
-          </span>
-          <span style={styles.activeTag}>
-            {state.activeClassification === 'pending' || !state.activeClassification
-              ? 'pending'
-              : state.activeClassification}
+        <div style={s.activeBar}>
+          <span style={{ ...s.activePulse, background: isActiveClassified ? balanceColor : '#f59e0b' }} />
+          <span style={s.activeDomain}>{state.activeDomain}</span>
+          <span style={{
+            ...s.activeTag,
+            color: isActiveClassified
+              ? (state.activeClassification === 'investment' ? '#22c55e' : '#ef4444')
+              : '#f59e0b',
+          }}>
+            {state.activeClassification === 'investment' ? 'invest'
+              : state.activeClassification === 'void' ? 'void'
+              : 'pending'}
           </span>
         </div>
       )}
@@ -174,183 +206,240 @@ export default function App() {
   );
 }
 
-function Stat({ label, value, color }: { label: string; value: string; color: string }) {
+function GlassCard({
+  label,
+  value,
+  color,
+  pct,
+  compact = false,
+}: {
+  label: string;
+  value: string;
+  color: string;
+  pct: number;
+  compact?: boolean;
+}) {
   return (
-    <div style={styles.statItem}>
-      <div style={{ ...styles.statDot, background: color }} />
-      <span style={styles.statLabel}>{label}</span>
-      <span style={{ ...styles.statValue, color }}>{value}</span>
+    <div style={{ ...s.card, flex: compact ? '0 0 auto' : 1 }}>
+      {/* micro fill bar at bottom of card */}
+      <div style={{ ...s.cardFill, width: `${pct}%`, background: `${color}40` }} />
+      <div style={{ ...s.cardLabel, color: `${color}cc` }}>{label}</div>
+      <div style={{ ...s.cardValue, color }}>{value}</div>
     </div>
   );
 }
 
-function getPercentColor(percent: number): string {
-  if (percent > BADGE_GREEN_THRESHOLD) return BADGE_COLOR_GREEN;
-  if (percent > BADGE_YELLOW_THRESHOLD) return BADGE_COLOR_YELLOW;
-  return BADGE_COLOR_RED;
-}
+// ─── Styles ─────────────────────────────────────────────────────────────────
 
-const styles = {
-  container: {
+const s = {
+  root: {
     display: 'flex',
     flexDirection: 'column' as const,
-    background: '#0f0f1a',
-    minHeight: 200,
+    background: '#07090f',
+    position: 'relative' as const,
+    overflow: 'hidden',
+    minHeight: 220,
   },
 
-  loading: {
-    padding: 20,
-    color: '#666688',
-    fontSize: 13,
+  aura: {
+    position: 'absolute' as const,
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 200,
+    pointerEvents: 'none' as const,
+    transition: 'background 1.5s ease',
+    zIndex: 0,
   },
 
   header: {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'space-between',
-    padding: '12px 16px 0',
-    fontSize: 13,
-    fontWeight: 700,
-    letterSpacing: 3,
-    textTransform: 'uppercase' as const,
-    color: '#6366f1',
+    padding: '14px 16px 0',
+    position: 'relative' as const,
+    zIndex: 1,
   },
 
-  dashboardBtn: {
-    background: 'transparent',
-    border: 'none',
-    color: '#6366f1',
+  wordmark: {
+    fontSize: 12,
+    fontWeight: 700,
+    letterSpacing: '0.2em',
+    textTransform: 'uppercase' as const,
+    color: 'rgba(255,255,255,0.3)',
+  },
+
+  iconBtn: {
+    background: 'rgba(255,255,255,0.06)',
+    border: '1px solid rgba(255,255,255,0.08)',
+    borderRadius: 6,
+    color: 'rgba(255,255,255,0.4)',
     cursor: 'pointer',
-    fontSize: 16,
-    padding: 0,
-    lineHeight: 1,
+    width: 26,
+    height: 26,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 
   balanceSection: {
-    padding: '20px 16px 12px',
+    padding: '18px 16px 10px',
     textAlign: 'center' as const,
+    position: 'relative' as const,
+    zIndex: 1,
   },
 
-  balancePercent: {
-    fontSize: 52,
+  balanceNumber: {
+    fontSize: 64,
     fontWeight: 700,
     lineHeight: 1,
+    letterSpacing: '-0.02em',
     fontVariantNumeric: 'tabular-nums' as const,
+    transition: 'color 1.5s ease',
+  },
+
+  balancePct: {
+    fontSize: 28,
+    fontWeight: 600,
+    verticalAlign: 'super',
+    marginLeft: 2,
   },
 
   balanceLabel: {
     fontSize: 11,
-    color: '#555577',
+    fontWeight: 500,
+    letterSpacing: '0.12em',
     textTransform: 'uppercase' as const,
-    letterSpacing: 2,
-    marginTop: 4,
+    color: 'rgba(255,255,255,0.25)',
+    marginTop: 6,
   },
 
   balanceSub: {
     fontSize: 12,
-    color: '#666688',
-    marginTop: 6,
-  },
-
-  progressTrack: {
-    height: 6,
-    background: 'rgba(255,255,255,0.06)',
-    position: 'relative' as const,
-    margin: '0 16px 16px',
-    borderRadius: 3,
-    overflow: 'hidden',
-  },
-
-  progressInvest: {
-    position: 'absolute' as const,
-    left: 0,
-    top: 0,
-    height: '100%',
-    background: '#22c55e',
-    borderRadius: 3,
-    transition: 'width 0.5s',
-  },
-
-  progressVoid: {
-    position: 'absolute' as const,
-    top: 0,
-    height: '100%',
-    background: '#ef4444',
-    borderRadius: 3,
-    transition: 'width 0.5s, left 0.5s',
-  },
-
-  breakdown: {
-    display: 'flex',
-    flexDirection: 'column' as const,
-    gap: 6,
-    padding: '0 16px 12px',
-  },
-
-  statItem: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 8,
-    fontSize: 13,
-  },
-
-  statDot: {
-    width: 6,
-    height: 6,
-    borderRadius: '50%',
-    flexShrink: 0,
-  },
-
-  statLabel: {
-    flex: 1,
-    color: '#888899',
-  },
-
-  statValue: {
-    fontWeight: 600,
+    color: 'rgba(255,255,255,0.2)',
+    marginTop: 4,
     fontVariantNumeric: 'tabular-nums' as const,
   },
 
-  activeSegment: {
+  track: {
+    height: 3,
+    background: 'rgba(255,255,255,0.05)',
+    margin: '8px 16px 12px',
+    borderRadius: 2,
+    position: 'relative' as const,
+    overflow: 'hidden',
+    zIndex: 1,
+  },
+
+  trackFill: {
+    position: 'absolute' as const,
+    top: 0,
+    height: '100%',
+    borderRadius: 2,
+    transition: 'width 0.6s ease',
+  },
+
+  cardsRow: {
     display: 'flex',
-    alignItems: 'center',
     gap: 8,
-    padding: '8px 16px',
-    background: 'rgba(99, 102, 241, 0.08)',
-    borderTop: '1px solid rgba(255,255,255,0.05)',
-    fontSize: 12,
-    color: '#888899',
+    padding: '0 12px 12px',
+    position: 'relative' as const,
+    zIndex: 1,
+  },
+
+  card: {
+    background: 'rgba(255,255,255,0.04)',
+    border: '1px solid rgba(255,255,255,0.07)',
+    borderRadius: 12,
+    padding: '10px 12px',
+    backdropFilter: 'blur(12px)',
+    WebkitBackdropFilter: 'blur(12px)',
+    position: 'relative' as const,
     overflow: 'hidden',
   },
 
-  activeDot: {
+  cardFill: {
+    position: 'absolute' as const,
+    bottom: 0,
+    left: 0,
+    height: '100%',
+    borderRadius: 12,
+    transition: 'width 0.6s ease',
+  },
+
+  cardLabel: {
+    fontSize: 10,
+    fontWeight: 600,
+    letterSpacing: '0.1em',
+    textTransform: 'uppercase' as const,
+    position: 'relative' as const,
+    zIndex: 1,
+  },
+
+  cardValue: {
+    fontSize: 18,
+    fontWeight: 700,
+    marginTop: 3,
+    fontVariantNumeric: 'tabular-nums' as const,
+    letterSpacing: '-0.01em',
+    position: 'relative' as const,
+    zIndex: 1,
+  },
+
+  activeBar: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+    padding: '8px 14px',
+    background: 'rgba(255,255,255,0.03)',
+    borderTop: '1px solid rgba(255,255,255,0.05)',
+    position: 'relative' as const,
+    zIndex: 1,
+  },
+
+  activePulse: {
     width: 6,
     height: 6,
     borderRadius: '50%',
-    background: '#6366f1',
     flexShrink: 0,
-    animation: 'pulse 2s infinite',
+    transition: 'background 1s ease',
+  },
+
+  activeDomain: {
+    flex: 1,
+    fontSize: 11,
+    color: 'rgba(255,255,255,0.35)',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap' as const,
+    fontVariantNumeric: 'tabular-nums' as const,
   },
 
   activeTag: {
     fontSize: 10,
-    padding: '2px 6px',
-    background: 'rgba(99,102,241,0.15)',
-    color: '#6366f1',
-    borderRadius: 4,
+    fontWeight: 600,
+    letterSpacing: '0.08em',
+    textTransform: 'uppercase' as const,
     flexShrink: 0,
-    textTransform: 'capitalize' as const,
+    transition: 'color 0.3s',
   },
 
-  actionBtn: {
-    margin: '0 20px 20px',
-    background: '#6366f1',
+  pill: {
+    background: 'rgba(99,102,241,0.9)',
     color: '#fff',
     border: 'none',
     borderRadius: 8,
-    padding: '10px 20px',
-    fontSize: 14,
+    padding: '10px 18px',
+    fontSize: 13,
     fontWeight: 600,
     cursor: 'pointer',
+    fontFamily: 'inherit',
   },
-};
+
+  loadingDot: {
+    width: 6,
+    height: 6,
+    borderRadius: '50%',
+    background: 'rgba(255,255,255,0.2)',
+  },
+} satisfies Record<string, React.CSSProperties>;
